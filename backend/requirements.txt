@@ -1,0 +1,13 @@
+langchain
+langchain-anthropic
+langchain-openai
+langsmith
+fastapi
+uvicorn
+pinecone
+python-dotenv
+pandas 
+langchain-community
+pinecone
+openpyxl
+sentence-transformers
