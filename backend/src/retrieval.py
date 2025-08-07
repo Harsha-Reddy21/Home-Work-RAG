@@ -1,6 +1,16 @@
 import os
 from pinecone import Pinecone
 from typing import List, Dict, Any
+from langchain_openai import OpenAIEmbeddings
+from dotenv import load_dotenv
+load_dotenv()
+os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+
+
+def get_embeddings(text: str):
+    """Get embeddings for a text"""
+    embeddings = OpenAIEmbeddings()
+    return embeddings.embed_query(text)
 
 def init_pinecone():
     """Initialize Pinecone client"""
@@ -15,14 +25,20 @@ def init_pinecone():
 def get_index(index_name=None):
     """Get Pinecone index"""
     pc = init_pinecone()
+    indexes = pc.list_indexes()
     index_name = index_name or os.environ.get("PINECONE_INDEX")
     
     if not index_name:
         raise ValueError("Pinecone index name must be provided")
     
+    # Check if index exists by comparing names directly
+    index_names = [index["name"] for index in indexes]
+    if index_name not in index_names:
+        raise ValueError(f"Index '{index_name}' not found in Pinecone. Available indexes: {index_names}")
+    
     return pc.Index(index_name)
 
-async def retrieve_similar_examples(query_vector: List[float], top_k: int = 3) -> List[Dict[str, Any]]:
+def retrieve_similar_examples(query_vector: List[float], top_k: int = 3) -> List[Dict[str, Any]]:
     """Retrieve similar examples from Pinecone"""
     try:
         index = get_index()
@@ -31,3 +47,17 @@ async def retrieve_similar_examples(query_vector: List[float], top_k: int = 3) -
     except Exception as e:
         print(f"Error retrieving from Pinecone: {str(e)}")
         return []
+
+
+
+if __name__ == "__main__":
+
+    
+
+    query = "write a function that takes two numbers and returns their sum"
+    query_vector = get_embeddings(query)
+    results = retrieve_similar_examples(query_vector)
+    print(results)
+
+
+

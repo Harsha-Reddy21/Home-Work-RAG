@@ -4,7 +4,16 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi import FastAPI, HTTPException, Depends
+from pydantic import BaseModel
+from typing import Dict, List, Any, Optional
+import os
+from dotenv import load_dotenv
+import json
+import numpy as np
 
+from src.llm_chain import get_evulate_function, feedback_function
+from src.retrieval import retrieve_similar_examples
 
 app=FastAPI()
 
@@ -14,25 +23,17 @@ async def health_check():
     return {"status": "ok"}
 
 
-@app.post("/generate-validation")
+@app.post("/generate-code")
 async def generate_validation(activity: str):
-    return {"status": "ok"}
+    pass
 
 
-@app.post("/validate-answer")
+
+@app.post("/feedback-answer")
 async def validate_answer(answer: str):
     return {"status": "ok"}
 
 
-@app.post("/test-validation")
-async def test_validation(test_cases: list[str]):
-    return {"status": "ok"}
-
-
-
-@app.post("/improve-prompts")
-async def improve_prompts(prompt: str):
-    return {"status": "ok"}
 
 
 
