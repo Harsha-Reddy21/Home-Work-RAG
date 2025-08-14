@@ -8,10 +8,14 @@ load_dotenv()
 
 
 os.environ["ANTHROPIC_API_KEY"] = os.getenv("ANTHROPIC_API_KEY")
-pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-index_name = "home-work"
+
 
 llm=anthropic.Anthropic(model="claude-3-7-sonnet-20250219")
+
+def get_index():
+    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+    index_name = "home-work"
+    return pc.Index(index_name)
 
 def generate_validation(activity: str):
     prompt=PromptTemplate(

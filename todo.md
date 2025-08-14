@@ -1,78 +1,70 @@
-# AI-Powered Validation Function Generation & Meta-Validation System - Todo List
+### Mandatory integrations (MVP)
 
-## Setup and Infrastructure
-- [ ] Set up project repository structure
-- [ ] Configure Python environment with required dependencies
-- [ ] Install and configure LangChain
-- [ ] Set up LangSmith for tracing and monitoring
-- [ ] Configure Claude 3.7 API access
-- [ ] Set up FastAPI backend structure
-- [ ] Create basic React frontend (optional)
+- ✅ Backend: enable CORS for dev (http://localhost:8080)
+  - Add `CORSMiddleware` in `backend/main.py` with appropriate origins, methods, headers
+- ✅ Backend: define JSON request/response models
+  - In `backend/models/schema.py`: `GenerateCodeRequest { user_query: str }`
+  - `FeedbackRequest { user_query: str; generated_function: str; submission: any }`
+  - Optionally: typed submissions per activity type (Grid/Math/Logic)
+- ✅ Backend: update endpoints to use models and return consistent shapes
+  - `POST /generate-code` → body: `GenerateCodeRequest` → returns `{ code: string }`
+  - `POST /feedback-answer` → body: `FeedbackRequest` → returns `{ is_correct: boolean, feedback: string, confidence_score: number }`
+- ✅ Frontend (Teacher): wire “Generate Activity” to backend
+  - Replace mock `setTimeout` in `frontend/src/pages/TeacherDashboard.tsx` with `POST /generate-code`
+  - Store returned `code` with the preview activity (e.g., `content.validationFunction`)
+- ✅ Frontend (Student): wire “Submit Activity” to backend
+  - In `frontend/src/pages/ActivityDetail.tsx`, on submit call `POST /feedback-answer` with `{ user_query, generated_function, submission }`
+  - Display backend `feedback` and `confidence_score` alongside current local score
 
-## Function Generation (LLM)
-- [ ] Design few-shot prompt templates for different problem types
-- [ ] Implement LangChain chains for generating JavaScript validation functions
-- [ ] Create custom instruction tuning for education domain
-- [ ] Build template selection logic based on activity type
-- [ ] Implement RAG system for retrieving similar validation scenarios
+### Backend hardening
 
-## Meta-Validation Engine
-- [ ] Set up PyMiniRacer or sandbox environment for JS function execution
-- [ ] Create test case execution framework
-- [ ] Implement comparison logic for expected vs. actual outcomes
-- [ ] Develop error pattern detection and classification system
-- [ ] Build quantitative metrics system (accuracy, reliability score)
-- [ ] Implement function correction suggestion mechanism
+- ✅ Rename `get_evulate_function` → `get_evaluate_function` in `backend/src/llm_chain.py` and update imports
+- ✅ LLMChain output handling
+  - Ensure `invoke()` text is extracted (string) and returned as `{ code }`
+  - Make `feedback_function` robust to LangChain return types; safely parse JSON
+- [ ] Retrieval/Pinecone stability
+  - Standardize SDK usage to current `pinecone` client; read `PINECONE_INDEX` from env
+  - Map Pinecone matches to RAG examples format expected by the prompt
+  - Guard retrieval with try/except and graceful empty result fallback
 
-## Feedback Engine
-- [ ] Design context-aware feedback templates
-- [ ] Implement logic for handling correct/incorrect/partial responses
-- [ ] Create attempt history tracking system
-- [ ] Develop adaptive feedback generation based on attempt history
-- [ ] Build positive reinforcement and constructive guidance patterns
+### Database integration
 
-## Template Library
-- [ ] Create reusable templates for grid checks
-- [ ] Develop templates for number range validations
-- [ ] Implement set logic validation templates
-- [ ] Design multi-step condition templates
-- [ ] Build edge case coverage patterns
+- ✅ Add Postgres dependency and SQLAlchemy models (`Activity`, `Attempt`)
+- ✅ Create DB session and Base setup
+- ✅ Add CRUD endpoints for activities and attempts
+- ✅ Fill `backend/src/prompt_templates.py` or centralize prompts in one place
+- ✅ Configure CORS origins, methods, headers explicitly (GET, POST, OPTIONS)
 
-## Test Suite Generator
-- [ ] Implement auto-creation of test cases from problem descriptions
-- [ ] Build support for expected answer variants
-- [ ] Create edge condition test generation
-- [ ] Develop comprehensive test coverage metrics
+### Frontend integration utilities
 
-## Error Handling Framework
-- [ ] Design structured try/catch patterns for generated code
-- [ ] Implement safe fallbacks and defaults
-- [ ] Create alert system for high-confidence failures
-- [ ] Build logging system for error tracking
+- ✅ Create simple API client (or React Query mutations) with base URL `VITE_API_BASE_URL` (default `http://localhost:8000`)
+- [ ] Optional: Vite dev proxy to backend to avoid CORS in dev
+- ✅ Add a health check call (GET `/health`) and toast if backend unavailable
 
-## Adaptive Feedback Loop
-- [ ] Implement prompt template updating based on function failures
-- [ ] Create confidence scoring system for generated functions
-- [ ] Develop error classification for prompt improvement
-- [ ] Build automated improvement suggestion system
+### Payload alignment (UI ↔ API)
 
-## Integration and API
-- [ ] Design and implement API endpoints for function generation
-- [ ] Create endpoints for validation execution
-- [ ] Implement feedback generation API
-- [ ] Build integration points between all system components
-- [ ] Create user activity flow implementation
+- [ ] Align `FeedbackRequest.submission` with UI shapes:
+  - Grid-based: `number[][]`
+  - Mathematical: `{ [id: string]: number }`
+  - Logical: `{ [id: string]: string | number }`
+- [ ] (If keeping test cases path) implement server-side transformation between submissions and test cases/expected outcomes
 
-## Testing and Quality Assurance
-- [ ] Implement unit tests for all components
-- [ ] Create integration tests for end-to-end flows
-- [ ] Develop performance benchmarks
-- [ ] Build monitoring dashboards using LangSmith
-- [ ] Create validation pipeline for generated functions
+### Dependencies, env, docs
 
-## Documentation and Deployment
-- [ ] Create comprehensive API documentation
-- [ ] Write developer guides for extending the system
-- [ ] Build deployment pipeline
-- [ ] Create containerization setup
-- [ ] Implement monitoring and alerting
+- ✅ Clean `backend/requirements.txt` (dedupe, pin versions; unify `langchain_openai` vs `langchain.embeddings`)
+- ✅ Add `.env.example` with required keys: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (optional), `PINECONE_API_KEY`, `PINECONE_ENVIRONMENT` (if needed), `PINECONE_INDEX`, `VITE_API_BASE_URL`
+- ✅ Update `README.md` with run instructions (backend + frontend) and env setup
+
+### Testing & safety (next)
+
+- [ ] Add FastAPI tests for `/generate-code` and `/feedback-answer` using TestClient with mocked LLM/Pinecone
+- [ ] Plan safe execution for generated JS (PyMiniRacer/Deno sandbox) for future server-side validation
+- [ ] Add basic frontend error handling (loading, error toasts) for both calls
+
+### Optional enhancements
+
+- [ ] Persist activities and attempts in a DB (CRUD endpoints)
+- [ ] Use React Query for mutations/queries and cache invalidation
+- [ ] Implement LangSmith tracing or remove unused references
+- [ ] Consolidate prompt templates and RAG example formatting library
+

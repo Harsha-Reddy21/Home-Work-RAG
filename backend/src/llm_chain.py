@@ -1,5 +1,6 @@
 import os
 import json 
+import re
 from typing import Dict, Any, List
 from langchain_anthropic import ChatAnthropic
 from langchain.chains import LLMChain
@@ -7,9 +8,13 @@ from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from dotenv import load_dotenv
 load_dotenv()
-from langchain.callbacks.tracers.langsmith import LangSmithTracer
-from langchain.schema import Document
-from langsmith import Client
+
+
+LANGSMITH_TRACING="true"
+LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
+LANGSMITH_API_KEY="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"
+LANGSMITH_PROJECT="Home-Work"
+OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY")
 
 def init_anthropic_model():
     """Initialize Anthropic model"""
@@ -43,32 +48,36 @@ def init_langsmith():
     if not api_key:
         return None
     
-    return LangSmithTracer(
-        project_name="educational-rag-system"
-    )
+    # LangSmith tracer optional; not used currently
+    return None
+
 
 
 
 
 def create_code_generation_chain(llm, rag_data):
     """
-    Create a chain to generate a JavaScript function based on a user query.
+    Create a chain to generate both a question and JavaScript function based on a user query.
     The RAG data contains previous user prompts and their respective JS function code.
-    Given a new user prompt, generate the appropriate JS function code.
+    Given a new user prompt, generate the appropriate question and JS function code.
     """
     template = """
-You are an expert JavaScript developer.
+You are an educational content generation system that creates math problems and their solution code.
+Your output must be in a specific format that will be parsed by the system.
+DO NOT include ANY explanations, markdown formatting, or anything outside the specified format.
 
-Below are examples of user prompts and the corresponding JavaScript function code:
-
+Examples:
 {rag_data}
 
-Now, given the following user prompt, generate the JavaScript function code that fulfills the request.
+Task:
+Create a math problem and JavaScript function that fulfills this request: {user_prompt}
 
-USER PROMPT:
-{user_prompt}
+Output format:
+question: "The specific math problem to solve"
+code: "function name(a, b) { return a + b; }"
 
-Return only the JavaScript function code.
+Ensure your output ONLY contains the question and code lines exactly as shown above.
+Do NOT include any function wrappers, JSON formatting, or any other content.
 """
     prompt = PromptTemplate(
         template=template,
@@ -82,17 +91,95 @@ Return only the JavaScript function code.
 
 
 
-def get_evulate_function(rag_data,user_prompt: str):
-    """Evaluate a function against test cases"""
+def get_evaluate_function(rag_data, user_prompt: str) -> dict:
+    """Generate question and JS function code based on RAG and prompt."""
+    llm = init_anthropic_model()
     
-    llmchain= create_code_generation_chain(init_anthropic_model(), rag_data)
-    return llmchain.invoke({"rag_data": rag_data, "user_prompt": user_prompt})
-
+    # Convert rag_data to string representation
+    rag_data_str = ""
+    for item in rag_data:
+        rag_data_str += f"Prompt: {item['prompt']}\nQuestion: {item.get('question', '')}\nCode: {item['code']}\n\n"
     
+    # Create a direct prompt without using LLMChain
+    prompt = f"""
+You are an educational content generation system that creates math problems and their solution code.
+Your output must be in a specific format that will be parsed by the system.
+DO NOT include ANY explanations, markdown formatting, or anything outside the specified format.
 
+Examples:
+{rag_data_str}
 
+Task:
+Create a specific math problem (not a coding task) and JavaScript function that fulfills this request: {user_prompt}
 
-def feedback_function(original_prompt, generated_function, test_cases, expected_outcomes):
+IMPORTANT: The question must be a specific math problem with concrete values that has a numerical answer, NOT a request to write code.
+
+GOOD EXAMPLES:
+- "What is the product of 8 and 12?"
+- "What is the value of matrix multiplication of [[1,2],[2,3]] and [[3,8],[5,9]]?"
+- "If a triangle has sides of length 3, 4, and 5, what is its area?"
+
+BAD EXAMPLES:
+- "Write a JavaScript function that performs matrix multiplication"
+- "Create a function to calculate the area of a triangle"
+
+Output format:
+question: "The specific math problem to solve with concrete values"
+code: "function calculateAnswer(input) {{ // JavaScript code that solves this specific problem }}"
+
+Ensure your output ONLY contains the question and code lines exactly as shown above.
+Do NOT include any function wrappers, JSON formatting, or any other content.
+"""
+    
+    # Use the model directly
+    response = llm.invoke(prompt)
+    
+    # Extract the text from the result
+    if hasattr(response, "content"):
+        text = response.content
+    else:
+        text = str(response)
+    
+    # Clean the output if needed
+    text = text.strip()
+    
+    # If the model still added markdown formatting, remove it
+    if "```" in text:
+        text = re.sub(r'```(?:javascript|js|json)?([\s\S]*?)```', r'\1', text).strip()
+    
+    print("DEBUG - Raw output:", text)
+    
+    # Extract question and code using regex patterns for the simple format
+    question_match = re.search(r'question:\s*[\'"]?(.+?)[\'"]?$', text, re.MULTILINE)
+    code_match = re.search(r'code:\s*[\'"]?(.+?)[\'"]?$', text, re.MULTILINE)
+    
+    if question_match and code_match:
+        question = question_match.group(1).strip('"\'')
+        code = code_match.group(1).strip('"\'')
+        print(f"Extracted question: {question}")
+        print(f"Extracted code: {code}")
+        return {
+            "question": question,
+            "code": code
+        }
+    
+    # Try alternative regex patterns
+    question_match = re.search(r'question:\s*[\'"](.+?)[\'"]', text)
+    code_match = re.search(r'code:\s*[\'"](.+?)[\'"]', text, re.DOTALL)
+    
+    if question_match and code_match:
+        return {
+            "question": question_match.group(1),
+            "code": code_match.group(1).replace('\\n', '\n').replace('\\"', '"')
+        }
+    
+    # If all parsing fails, return a default response
+    return {
+        "question": "What is the result of the calculation?",
+        "code": "function calculate() { return 0; }"
+    }
+
+def feedback_function(original_prompt: str, generated_function: str, test_cases, expected_outcomes):
     """
     Use LLM to provide feedback on the generated function based on the original prompt, test cases, and expected outcomes.
     """
@@ -134,14 +221,32 @@ Return a JSON with:
         "generated_function": generated_function,
         "test_cases_and_outcomes": test_cases_text
     })
+    # Normalize and parse JSON from model output
+    parsed = None
+    if isinstance(result, dict):
+        text = result.get("text") or result.get("content") or ""
+    else:
+        text = str(result)
     try:
-        return json.loads(result)
+        parsed = json.loads(text)
     except Exception:
+        parsed = None
+    if isinstance(parsed, dict):
         return {
-            "is_correct": False,
-            "feedback": "Unable to evaluate the function automatically.",
-            "confidence_score": 0.0
+            "is_correct": bool(parsed.get("is_correct", False)),
+            "feedback": str(parsed.get("feedback", "")),
+            "confidence_score": float(parsed.get("confidence_score", 0.0)),
         }
+    return {
+        "is_correct": False,
+        "feedback": "Unable to evaluate the function automatically.",
+        "confidence_score": 0.0,
+    }
+    
+
+
+
+
     
 
 
@@ -150,20 +255,26 @@ Return a JSON with:
 
 
 if __name__ == "__main__":
-    # llm= init_anthropic_model()
-    # rag_data=[{'prompt':'What is the sum of two numbers?', 'code': 'function sum(a, b) { return a + b; }'}]
-    # user_prompt = "Write a function to calculate the product of two numbers."
-    # result = get_evulate_function(rag_data, user_prompt)    
-    # print(result)
-
-    llm=init_openai_model()
-    original_prompt='generate a function that takes two numbers and returns their sum'
-    generated_function='function sum(a, b) { return a + b; }'
-    test_cases= [
-        {"input": [1, 2], "expected": 3},
-        {"input": [5, 7], "expected": 12},
-        {"input": [-1, -1], "expected": -2}
+    llm = init_anthropic_model()
+    rag_data = [
+        {
+            'prompt': 'Give me assignment on sum of numbers',
+            'question': 'What is the sum of 5 and 7?',
+            'code': 'function sum(a, b) { return a + b; }'
+        }
     ]
-    expected_outcomes= [3, 12, -2]
-    feedback = feedback_function(original_prompt, generated_function, test_cases, expected_outcomes)
-    print(feedback)
+    user_prompt = "Give me assignment on product of numbers"
+    result = get_evaluate_function(rag_data, user_prompt)    
+    print(json.dumps(result, indent=2))
+
+    # llm=init_openai_model()
+    # original_prompt='generate a function that takes two numbers and returns their sum'
+    # generated_function='function sum(a, b) { return a + b; }'
+    # test_cases= [
+    #     {"input": [1, 2], "expected": 3},
+    #     {"input": [5, 7], "expected": 12},
+    #     {"input": [-1, -1], "expected": -2}
+    # ]
+    # expected_outcomes= [3, 12, -2]
+    # feedback = feedback_function(original_prompt, generated_function, test_cases, expected_outcomes)
+    # print(feedback)
